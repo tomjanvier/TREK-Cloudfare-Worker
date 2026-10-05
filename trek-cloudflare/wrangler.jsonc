@@ -9,7 +9,7 @@
     "traces": { "enabled": true }
   },
   "vars": {
-    "APP_URL": "https://trek-cloudflare.workers.dev",
+    "APP_URL": "https://trek-cloudflare.tckgrg9ytv.workers.dev",
     "WP_SITE_URL": "",
     "MAP_DEFAULT_STYLE": "https://tiles.openfreemap.org/styles/liberty"
   },
@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "trek-db",
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "db791657-a4e6-4b08-9001-10dbcc0effba",
       "migrations_dir": "migrations"
     }
   ],
@@ -30,7 +30,7 @@
   "kv_namespaces": [
     {
       "binding": "SESSIONS",
-      "id": "REPLACE_WITH_KV_ID"
+      "id": "604934b0777146f993539741162a0cfb"
     }
   ],
   "durable_objects": {
