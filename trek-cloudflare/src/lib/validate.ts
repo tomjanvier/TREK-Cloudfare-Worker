@@ -11,15 +11,26 @@ const isoDate = z
   .optional();
 
 export const registerSchema = z.object({
-  username: z.string().trim().min(2).max(32),
+  // Optionnel comme dans le contrat d'origine : dérivé de l'email si absent.
+  username: z.string().trim().min(2).max(32).optional(),
   email: z.string().trim().toLowerCase().max(254).email(),
   password: z.string().min(8).max(256),
+  // Accepté pour compatibilité (pas d'invitations dans le MVP : ignoré).
+  invite_token: z.string().max(512).optional(),
 });
 
-export const loginSchema = z.object({
-  login: z.string().trim().min(1).max(254),
-  password: z.string().min(1).max(256),
-});
+// Contrat d'origine : { email, password, remember_me? }.
+// `login` reste accepté comme alias (username ou email) pour curl/scripts.
+export const loginSchema = z
+  .object({
+    email: z.string().trim().max(254).optional(),
+    login: z.string().trim().min(1).max(254).optional(),
+    password: z.string().min(1).max(256),
+    remember_me: z.boolean().optional(),
+  })
+  .refine((v) => (v.email?.trim() || v.login?.trim()) && v.password, {
+    message: "email ou login requis",
+  });
 
 export const tripCreateSchema = z.object({
   title: z.string().trim().min(1).max(160),

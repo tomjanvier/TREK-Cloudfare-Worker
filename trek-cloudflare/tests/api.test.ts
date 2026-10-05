@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { D1Database } from "@cloudflare/workers-types";
 import { newShareToken } from "../src/db/client";
 import { clampLatLng, decodeCursor, encodeCursor } from "../src/lib/http";
 import { parseInstagramUrl } from "../src/photos/instagram";
-import { instaPinSchema, placeCreateSchema, sharePatchSchema, tripCreateSchema } from "../src/lib/validate";
+import { instaPinSchema, loginSchema, placeCreateSchema, registerSchema, sharePatchSchema, tripCreateSchema } from "../src/lib/validate";
+import { uniqueUsernameFromEmail } from "../src/routes/auth";
 
 describe("parseInstagramUrl", () => {
   it("accepte /p/, /reel/ et /reels/", () => {
@@ -47,6 +49,37 @@ describe("clampLatLng", () => {
     expect(clampLatLng(91, 0)).toEqual({ error: "bad_latlng" });
     expect(clampLatLng(0, 181)).toEqual({ error: "bad_latlng" });
     expect(clampLatLng("abc", 0)).toEqual({ error: "bad_latlng" });
+  });
+});
+
+describe("contrat auth (parité client d'origine)", () => {
+  it("login accepte { email, password } comme le client", () => {
+    expect(loginSchema.safeParse({ email: "a@b.c", password: "secret123" }).success).toBe(true);
+  });
+  it("login accepte l'alias { login } et remember_me", () => {
+    const r = loginSchema.safeParse({ login: "demo", password: "x", remember_me: true });
+    expect(r.success).toBe(true);
+  });
+  it("login rejette sans identifiant", () => {
+    expect(loginSchema.safeParse({ password: "x" }).success).toBe(false);
+    expect(loginSchema.safeParse({ email: "  ", password: "x" }).success).toBe(false);
+  });
+  it("register accepte sans username (dérivé) + invite_token ignoré", () => {
+    const r = registerSchema.safeParse({ email: "jean@example.fr", password: "secret123", invite_token: "abc" });
+    expect(r.success).toBe(true);
+  });
+
+  it("uniqueUsernameFromEmail dérive depuis l'email", async () => {
+    const db = { prepare: () => ({ bind: () => ({ first: async () => null }) }) } as unknown as D1Database;
+    expect(await uniqueUsernameFromEmail(db, "Jean.Dupont+tag@example.fr")).toBe("jeanduponttag");
+    expect(await uniqueUsernameFromEmail(db, "@@@@")).toBe("user");
+  });
+
+  it("uniqueUsernameFromEmail suffixe en cas de collision", async () => {
+    const db = { prepare: () => ({ bind: () => ({ first: async () => ({ ok: 1 }) }) }) } as unknown as D1Database;
+    const name = await uniqueUsernameFromEmail(db, "demo@x.fr");
+    expect(name.startsWith("demo-")).toBe(true);
+    expect(name.length).toBeLessThanOrEqual(32);
   });
 });
 
