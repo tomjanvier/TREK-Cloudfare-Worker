@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "test": "vitest run",
+    "test:e2e": "node tests/e2e/parcours.mjs && node tests/e2e/offline-queue.mjs",
     "db:create": "wrangler d1 create trek-db",
     "db:migrate:local": "wrangler d1 migrations apply trek-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply trek-db --remote",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261001.1",
+    "playwright": "^1.63.0",
     "typescript": "^5.9.2",
     "vitest": "^5.0.3",
     "wrangler": "^4.42.0"

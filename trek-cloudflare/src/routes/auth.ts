@@ -81,6 +81,11 @@ auth.post("/register", async (c) => {
 auth.post("/login", async (c) => {
   const limited = await checkRate(c, "login");
   if (limited) return limited;
+  // Ménage des clés d'idempotence expirées, une fois par connexion : la table ne
+  // grossit pas indéfiniment sans coût sur le chemin des mutations.
+  c.executionCtx.waitUntil(
+    c.env.DB.prepare("DELETE FROM idempotency_keys WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')").run().catch(() => null),
+  );
   const parsed = loginSchema.safeParse(await readJson(c));
   if (!parsed.success) return err(c, "bad_request", 400, { issues: fmtIssues(parsed.error) });
   const { password } = parsed.data;

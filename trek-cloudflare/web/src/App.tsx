@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { auth, getToken, type User } from "./api";
 import { Login } from "./pages/Login";
 import { Journeys, JourneyDetail } from "./pages/Journey";
+import { OfflineBadge } from "./components/OfflineBadge";
 import { Trips } from "./pages/Trips";
 import { TripDetail } from "./pages/TripDetail";
 import { SharedTrip } from "./pages/SharedTrip";
@@ -97,6 +98,7 @@ export function App() {
           Déconnexion
         </button>
       </header>
+      <OfflineBadge />
       <main>
         {route.name === "trips" ? (
           <Trips user={user} />

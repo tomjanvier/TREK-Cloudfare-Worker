@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { trips, type Trip, type User } from "../api";
 import { navigate } from "../App";
 
@@ -11,7 +11,7 @@ export function Trips({ user: _user }: { user: User }) {
   const [days, setDays] = useState("3");
   const [busy, setBusy] = useState(false);
 
-  async function load(c?: string) {
+  const load = useCallback(async (c?: string) => {
     setLoading(true);
     setErr(null);
     try {
@@ -23,7 +23,15 @@ export function Trips({ user: _user }: { user: User }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  // Chargement initial + rejeu des mutations hors-ligne.
+  useEffect(() => {
+    void load();
+    const onReplayed = () => void load();
+    window.addEventListener("trek:replayed", onReplayed);
+    return () => window.removeEventListener("trek:replayed", onReplayed);
+  }, [load]);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();

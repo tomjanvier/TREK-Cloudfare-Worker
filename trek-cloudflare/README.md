@@ -50,6 +50,16 @@ un lien public n'expose que les photos externes.
 **Temps réel** — Durable Object `TripRoom` (hibernation) : une room WebSocket par
 voyage, diffusion serveur → clients, anti-écho côté client.
 
+**Offline-first (PWA)** — c'est le cœur de l'original, porté ici :
+- `web/public/sw.js` : shell précaché, navigations réseau→cache, assets hachés
+  cache→réseau, lectures API mises en cache. Les écritures ne sont **jamais**
+  interceptées par le SW (elles passent par la file, sinon la clé d'idempotence
+  serait perdue).
+- `web/src/offline.ts` : file de mutations en IndexedDB, ordre préservé, rejeu
+  automatique au retour du réseau avec la `X-Idempotency-Key` d'origine.
+- Bandeau d'état réseau + nombre de modifications en attente.
+- Manifest + icônes : l'app est installable (iOS/Android) et démarre hors-ligne.
+
 **Intégrations** — Instagram via oEmbed public (lien public, sans token) et WordPress
 via REST `/media` + `/posts` (avec garde SSRF même-hôte).
 
@@ -125,7 +135,19 @@ Secrets prod : `npx wrangler secret put JWT_SECRET`.
 | GET/POST | `/api/photos/instagram/preview` + pin, `/api/photos/wordpress/media|posts` + pin | public/session/membre |
 | WS | `/ws/trip/:id` (`?token=` ou `?share=`) | membre |
 
-Mutations rejouables via `X-Idempotency-Key` (D1, 24 h, `x-idempotent-replay`).
+Mutations rejouables via `X-Idempotency-Key`. La clé est **réservée avant
+traitement** (`status = 0`) : deux requêtes identiques simultanées ne peuvent donc
+pas appliquer l'effet deux fois — la perdante reçoit `425 Too Early` et le client
+réessaie. Une clé terminée rejoue la réponse mémorisée (`x-idempotent-replay`).
+
+## Idempotence : le piège du rejeu concurrent
+
+Écrire la clé **après** traitement ne protège de rien en concurrence : deux
+concurrence : deux requêtes identiques lisent toutes deux « clé absente » avant que
+la première n'écrive. La file hors-ligne rend ce cas réel (l'événement `online`
+peut déclencher deux rejeux). D'où : réservation atomique + verrou d'exclusion
+côté client. C'est vérifié par `tests/e2e/offline-queue.mjs`, qui échoue si un
+voyage est créé deux fois.
 
 ## Sécurité
 
@@ -148,8 +170,14 @@ Mutations rejouables via `X-Idempotency-Key` (D1, 24 h, `x-idempotent-replay`).
 ## Vérifications
 
 ```bash
-npm run typecheck        # API
-npm test                 # 35 tests
-npm --prefix web run build   # typecheck du front
+npm run typecheck            # API
+npm test                     # 35 tests de contrats
+npm run frontend:build       # typecheck + build du front
 npx wrangler deploy --dry-run
+
+# E2E navigateur (nécessite E2E_PASSWORD, et playwright chromium)
+E2E_PASSWORD='…' node tests/e2e/parcours.mjs       # parcours complet + PWA + hors-ligne
+E2E_PASSWORD='…' node tests/e2e/offline-queue.mjs  # file + absence de doublon
 ```
+
+Les deux e2e sont idempotents : ils nettoient les données qu'ils créent.

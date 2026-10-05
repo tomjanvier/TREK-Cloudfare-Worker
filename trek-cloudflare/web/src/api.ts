@@ -3,6 +3,7 @@
  * Aucune dépendance : fetch natif + token JWT en localStorage (le cookie
  * httpOnly est posé par le Worker, le Bearer sert au reload).
  */
+import { enqueue } from "./offline";
 
 export interface User {
   id: number;
@@ -192,35 +193,74 @@ export function setToken(token: string | null): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** true quand la requête a échoué faute de réseau et a été mise en file. */
+  queued: boolean;
+  constructor(status: number, message: string, queued = false) {
     super(message);
     this.status = status;
+    this.queued = queued;
   }
 }
+
+function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
+
+const MUTATING = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 async function request<T>(method: string, path: string, body?: unknown, opts: { raw?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload: BodyInit | undefined;
+  let isJson = false;
   if (body instanceof FormData) {
     payload = body;
   } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
+    isJson = true;
   }
-  const res = await fetch(path, { method, headers, body: payload, credentials: "include" });
+
+  const mutating = MUTATING.has(method);
+  // Clé d'idempotence stable : c'est elle qui empêche un rejeu de double-appliquer.
+  const idemKey = mutating ? newIdempotencyKey() : "";
+  if (idemKey) headers["X-Idempotency-Key"] = idemKey;
+
+  let res: Response;
+  try {
+    res = await fetch(path, { method, headers, body: payload, credentials: "include" });
+  } catch (e) {
+    // Coupure réseau : les écritures sont mises en file puis rejouées.
+    if (mutating && isJson) {
+      await enqueue({ key: idemKey, method, path, body: JSON.stringify(body ?? {}), createdAt: Date.now() });
+      throw new ApiError(0, "Hors ligne — modification enregistrée, elle partira au retour du réseau.", true);
+    }
+    throw new ApiError(0, e instanceof Error ? e.message : "network_error");
+  }
+
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  const data = text ? (JSON.parse(text) as unknown) : undefined;
+  const data = text ? safeJson(text) : undefined;
   if (!res.ok) {
     const msg =
       (data as { error?: string } | undefined)?.error ??
-      (typeof data === "string" ? data.slice(0, 120) : `HTTP ${res.status}`);
+      (typeof data === "string" ? text.slice(0, 120) : `HTTP ${res.status}`);
     throw new ApiError(res.status, msg);
   }
   if (opts.raw) return data as T;
   return data as T;
+}
+
+/** Le fallback SPA renvoie index.html pour une route inconnue : on n'en veut pas comme JSON. */
+function safeJson(text: string): unknown {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("<")) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------- auth ----------
