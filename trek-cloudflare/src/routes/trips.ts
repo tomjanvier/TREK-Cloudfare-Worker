@@ -35,7 +35,10 @@ trips.get("/", requireAuth, async (c) => {
     binds.push(cursor.t, cursor.t, cursor.id);
   }
   const { results } = await c.env.DB.prepare(
-    `SELECT t.* FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ?
+    `SELECT t.*,
+       (SELECT COUNT(*) FROM places p WHERE p.trip_id = t.id) AS places_count,
+       (SELECT COUNT(*) FROM photo_shares s WHERE s.trip_id = t.id) AS photos_count
+     FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ?
      WHERE ${conds.join(" AND ")} ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`,
   )
     .bind(user.id, ...binds, limit + 1)
@@ -147,7 +150,18 @@ trips.delete("/:id", requireAuth, async (c) => {
   const id = Number(c.req.param("id"));
   const trip = await assertTripAccess(c.env.DB, id, user.id);
   if (!trip || trip.user_id !== user.id) return err(c, "not_found", 404);
-  await c.env.DB.prepare("DELETE FROM trips WHERE id = ?").bind(id).run();
+  // Suppression explicite (ne dépend pas des ON DELETE CASCADE : D1/SQLite
+  // n'applique les FK que si le pragma est actif sur la connexion).
+  // db.batch() = atomique (tout ou rien).
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM photo_shares WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM photos WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM places WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM days WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM share_tokens WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM trip_members WHERE trip_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM trips WHERE id = ?").bind(id),
+  ]);
   c.executionCtx.waitUntil(
     (async () => {
       const listed = await c.env.PHOTOS_BUCKET.list({ prefix: `photos/${id}/` }).catch(() => null);

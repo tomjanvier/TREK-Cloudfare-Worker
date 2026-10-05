@@ -8,11 +8,14 @@ import { err } from "./lib/http";
 import { idempotency } from "./lib/idempotency";
 import authRoutes from "./routes/auth";
 import daysRoutes from "./routes/days";
+import { exportNested } from "./routes/export";
 import { instagramApi, instagramNested } from "./routes/instagram";
+import { membersNested } from "./routes/members";
 import { photosNested } from "./routes/photos";
 import { placesApi, placesNested } from "./routes/places";
 import sharedRoutes from "./routes/share";
 import tripsRoutes from "./routes/trips";
+import { weatherNested } from "./routes/weather";
 import { wordpressApi, wordpressNested } from "./routes/wordpress";
 
 // Durable Object déclaré dans wrangler.jsonc (TRIP_ROOM).
@@ -52,6 +55,9 @@ app.route("/api/trips", placesNested);
 app.route("/api/trips", photosNested);
 app.route("/api/trips", instagramNested);
 app.route("/api/trips", wordpressNested);
+app.route("/api/trips", membersNested);
+app.route("/api/trips", exportNested);
+app.route("/api/trips", weatherNested);
 app.route("/api/days", daysRoutes);
 app.route("/api/places", placesApi);
 app.route("/api/shared", sharedRoutes);

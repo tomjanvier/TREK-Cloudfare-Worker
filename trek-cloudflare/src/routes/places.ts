@@ -14,7 +14,26 @@ placesNested.get("/:id/places", requireAuth, async (c) => {
   const tripId = Number(c.req.param("id"));
   const trip = await assertTripAccess(c.env.DB, tripId, userIdOf(c));
   if (!trip) return err(c, "not_found", 404);
-  const { results } = await c.env.DB.prepare("SELECT * FROM places WHERE trip_id = ? ORDER BY id").bind(tripId).all();
+  const conds = ["trip_id = ?"];
+  const binds: (number | string)[] = [tripId];
+  const dayId = c.req.query("day_id");
+  if (dayId !== undefined) {
+    const n = Number(dayId);
+    if (!Number.isFinite(n)) return err(c, "bad_day_id", 400);
+    conds.push("day_id = ?");
+    binds.push(n);
+  }
+  const category = c.req.query("category")?.trim();
+  if (category) {
+    conds.push("category = ?");
+    binds.push(category.slice(0, 80));
+  }
+  const search = c.req.query("search")?.trim();
+  if (search) {
+    conds.push("(name LIKE ? OR address LIKE ? OR notes LIKE ?)");
+    binds.push(`%${search.slice(0, 80)}%`, `%${search.slice(0, 80)}%`, `%${search.slice(0, 80)}%`);
+  }
+  const { results } = await c.env.DB.prepare(`SELECT * FROM places WHERE ${conds.join(" AND ")} ORDER BY id LIMIT 500`).bind(...binds).all();
   return c.json({ places: results });
 });
 

@@ -19,6 +19,9 @@ trek-cloudflare/
   src/index.ts            Composition fine : middlewares, montage routes, /ws, fallback SPA
   src/routes/auth.ts      /api/auth — register/login/me/logout (rate-limit 10/min/IP)
   src/routes/trips.ts     /api/trips — CRUD + jours imbriqués + share + map-photos GeoJSON
+  src/routes/members.ts   /api/trips/:id/members — list/invite/retrait (owner)
+  src/routes/export.ts    /api/trips/:id/export.gpx + calendar.ics (session ou ?share=)
+  src/routes/weather.ts   /api/trips/:id/weather — Open-Meteo sans clé (centroïde + fenêtre jours)
   src/routes/days.ts      /api/days/:dayId — GET/PATCH/DELETE
   src/routes/places.ts    /api/trips/:id/places + /api/places/:placeId
   src/routes/photos.ts    /api/trips/:id/photos — upload R2, fichier (Range/ETag),
@@ -28,13 +31,15 @@ trek-cloudflare/
   src/routes/wordpress.ts /api/photos/wordpress/media|posts + import (garde SSRF)
   src/realtime/TripRoom.ts Durable Object hibernation (1 room WebSocket / voyage)
   src/lib/               http, validate (zod), access, ratelimit, cache,
-                          notify (waitUntil), idempotency (X-Idempotency-Key via D1)
+                          notify (waitUntil), idempotency (X-Idempotency-Key via D1),
+                          export (builders GPX/ICS purs + URL Open-Meteo)
   src/auth.ts             Sessions JWT HS256 (cookie trek_session + Bearer), PBKDF2
   src/db/client.ts        Helpers D1 + gardes d'accès
   migrations/0001_init.sql Schéma D1 (users, trips, days, places, photos,
   migrations/0002_idempotency.sql  share_tokens, trip_members, photo_shares,
                           idempotency_keys)
   tests/api.test.ts       11 tests vitest (parseurs, curseurs, schemas)
+  tests/export.test.ts    5 tests (GPX, ICS, pliage RFC 5545, fenêtre météo)
   scripts/seed.mjs         Seed démo (npm run db:seed:local [--remote])
   frontend/README.md      Brancher le client React d'origine (build -> ./public)
   wrangler.jsonc          Bindings D1/R2/KV/DO/ASSETS + observabilité
@@ -70,9 +75,14 @@ Secrets prod : `npx wrangler secret put JWT_SECRET` (jamais en clair ni dans `wr
 |---|---|---|
 | POST | `/api/auth/register`, `/api/auth/login` | rate-limit 10/min/IP |
 | GET | `/api/auth/me` | session |
-| GET | `/api/trips?limit&cursor&archived` | session, keyset `updated_at+id` |
+| GET | `/api/trips?limit&cursor&archived` | session, keyset `updated_at+id`, compteurs lieux/photos |
 | POST | `/api/trips` (`days_count` ≤ 60) | session |
-| GET/PATCH/DELETE | `/api/trips/:id` (`is_archived` = owner) | membre / owner |
+| GET/PATCH/DELETE | `/api/trips/:id` (`is_archived` = owner, delete atomique + R2 nettoyé) | membre / owner |
+| GET/POST | `/api/trips/:id/members` (invite par id/email/username) | membre / owner |
+| DELETE | `/api/trips/:id/members/:userId` (retrait ou départ) | owner ou soi-même |
+| GET | `/api/trips/:id/places?search&day_id&category` | membre |
+| GET | `/api/trips/:id/export.gpx`, `/api/trips/:id/calendar.ics` | membre ou `?share=` (`share_map`) |
+| GET | `/api/trips/:id/weather` (Open-Meteo, edge-cache 1 h via share) | membre ou `?share=` |
 | GET/POST | `/api/trips/:id/days` | membre |
 | GET/PATCH/DELETE | `/api/days/:dayId` | membre |
 | GET/POST | `/api/trips/:id/places` | membre |
@@ -101,6 +111,8 @@ mutation queue offline-first du client d'origine.
   (`{ trip, places, photo_shares }`). Le front d'origine (`SharedTripPage`) s'y branche tel quel.
 - **Overlay unifié** : `GET /api/trips/:id/map-photos` → `FeatureCollection`
   (`L.geoJSON` côté Leaflet, source `geojson` + clusters côté MapLibre/GL).
+  Composant drop-in : `frontend/components/PhotoShareMap.tsx` (+ README d'intégration
+  `SharedTripPage` / `JourneyDetailPageMapView` / `CollectionMapPanel`).
 - **Instagram** (embed public, sans login) : preview oEmbed + épingle `{ url, lat, lng }`
   (oEmbed mis en cache : KV 24 h + edge 10 min). Posts privés = `oembed_failed`.
 - **WordPress** : `WP_SITE_URL` requis ; timeout 12 s, cap réponse 1,5 Mo, **garde SSRF**
@@ -130,6 +142,10 @@ mutation queue offline-first du client d'origine.
 - DO **hibernation** (`getWebSockets()` + `webSocketMessage`, validation JSON ≤ 64 Ko),
   plus de `Set` en mémoire perdu à l'éviction.
 - `optionalAuth` saute la vérif HMAC sur les routes purement publiques.
+- Suppression voyage : batch D1 **atomique** (pas de dépendance aux
+  `ON DELETE CASCADE`, inactifs sans pragma FK sur la connexion).
+- Liste voyages : compteurs lieux/photos en sous-requêtes (pas de N+1).
+- Exports GPX/ICS et météo calculés au edge, requêtes jointes en 1 aller-retour.
 
 ## Limites assumées (Workers)
 
