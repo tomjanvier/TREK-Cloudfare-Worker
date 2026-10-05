@@ -96,6 +96,81 @@ export interface WpMedia {
   mime: string | null;
 }
 
+export interface Assignment {
+  id: number;
+  day_id: number;
+  place_id: number;
+  order_index: number;
+  notes: string | null;
+}
+
+export interface PlanItem extends Place {
+  assignment_id: number;
+  /** Redondant avec `id` (celui du lieu) mais explicite dans la réponse de l'API. */
+  place_id: number;
+  order_index: number;
+}
+
+export interface PlanDay extends Day {
+  items: PlanItem[];
+}
+
+export interface Plan {
+  days: PlanDay[];
+  unassigned: Place[];
+}
+
+export interface Reservation {
+  id: number;
+  trip_id: number;
+  day_id: number | null;
+  place_id: number | null;
+  title: string;
+  type: string;
+  status: string;
+  reservation_time: string | null;
+  reservation_end_time: string | null;
+  location: string | null;
+  confirmation_number: string | null;
+  notes: string | null;
+  cost_cents: number | null;
+  currency: string | null;
+  day_number?: number | null;
+  place_name?: string | null;
+}
+
+export interface BudgetItem {
+  id: number;
+  category: string;
+  name: string;
+  total_cents: number;
+  currency: string | null;
+  persons: number | null;
+  days: number | null;
+  note: string | null;
+  sort_order: number;
+  members?: { user_id: number; username: string; share_cents: number }[];
+}
+
+export interface PackingItem {
+  id: number;
+  name: string;
+  checked: number;
+  category: string | null;
+  sort_order: number;
+}
+
+export interface TodoItem {
+  id: number;
+  name: string;
+  checked: number;
+  category: string | null;
+  description: string | null;
+  due_date: string | null;
+  priority: number;
+  sort_order: number;
+}
+
 const TOKEN_KEY = "trek_token";
 
 export function getToken(): string | null {
@@ -223,6 +298,49 @@ export const trips = {
     ),
   pinWordPress: (id: number, b: { media_id: number; lat?: number | null; lng?: number | null }) =>
     request<{ id: number }>("POST", `/api/trips/${id}/photos/wordpress`, b).then((r) => r.id),
+  // ---------- plan (ordre du jour) ----------
+  plan: (id: number) => request<Plan>("GET", `/api/trips/${id}/plan`),
+  assign: (id: number, b: { day_id: number; place_id: number }) =>
+    request<{ assignment: Assignment }>("POST", `/api/trips/${id}/assignments`, b).then((r) => r.assignment),
+  unassign: (id: number, assignmentId: number) =>
+    request<{ ok: true }>("DELETE", `/api/trips/${id}/assignments/${assignmentId}`),
+  moveAssignment: (id: number, assignmentId: number, dayId: number) =>
+    request<{ assignment: Assignment }>("PATCH", `/api/trips/${id}/assignments/${assignmentId}`, { day_id: dayId }),
+  reorderDay: (id: number, dayId: number, placeIds: number[]) =>
+    request<{ ok: true }>("POST", `/api/trips/${id}/assignments/reorder?day_id=${dayId}`, { place_ids: placeIds }),
+  // ---------- réservations / hébergements ----------
+  reservations: (id: number) => request<{ reservations: Reservation[] }>("GET", `/api/trips/${id}/reservations`).then((r) => r.reservations),
+  addReservation: (id: number, b: Record<string, unknown>) =>
+    request<{ reservation: Reservation }>("POST", `/api/trips/${id}/reservations`, b).then((r) => r.reservation),
+  updateReservation: (id: number, resId: number, b: Record<string, unknown>) =>
+    request<{ reservation: Reservation }>("PATCH", `/api/trips/${id}/reservations/${resId}`, b).then((r) => r.reservation),
+  deleteReservation: (id: number, resId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/reservations/${resId}`),
+  accommodations: (id: number) =>
+    request<{ accommodations: Record<string, unknown>[] }>("GET", `/api/trips/${id}/accommodations`).then((r) => r.accommodations),
+  addAccommodation: (id: number, b: Record<string, unknown>) =>
+    request<{ accommodation: Record<string, unknown> }>("POST", `/api/trips/${id}/accommodations`, b).then((r) => r.accommodation),
+  deleteAccommodation: (id: number, accId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/accommodations/${accId}`),
+  // ---------- budget / packing / todos ----------
+  budget: (id: number) =>
+    request<{ budget_items: BudgetItem[]; total_cents: number }>("GET", `/api/trips/${id}/budget`),
+  addBudgetItem: (id: number, b: Record<string, unknown>) =>
+    request<{ budget_item: BudgetItem }>("POST", `/api/trips/${id}/budget`, b).then((r) => r.budget_item),
+  updateBudgetItem: (id: number, itemId: number, b: Record<string, unknown>) =>
+    request<{ budget_item: BudgetItem }>("PATCH", `/api/trips/${id}/budget/${itemId}`, b).then((r) => r.budget_item),
+  deleteBudgetItem: (id: number, itemId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/budget/${itemId}`),
+  packing: (id: number) =>
+    request<{ packing_items: PackingItem[]; total: number; checked: number }>("GET", `/api/trips/${id}/packing`),
+  addPackingItem: (id: number, b: Record<string, unknown>) =>
+    request<{ packing_item: PackingItem }>("POST", `/api/trips/${id}/packing`, b).then((r) => r.packing_item),
+  updatePackingItem: (id: number, itemId: number, b: Record<string, unknown>) =>
+    request<{ packing_item: PackingItem }>("PATCH", `/api/trips/${id}/packing/${itemId}`, b).then((r) => r.packing_item),
+  deletePackingItem: (id: number, itemId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/packing/${itemId}`),
+  todos: (id: number) => request<{ todos: TodoItem[] }>("GET", `/api/trips/${id}/todos`).then((r) => r.todos),
+  addTodo: (id: number, b: Record<string, unknown>) =>
+    request<{ todo: TodoItem }>("POST", `/api/trips/${id}/todos`, b).then((r) => r.todo),
+  updateTodo: (id: number, todoId: number, b: Record<string, unknown>) =>
+    request<{ todo: TodoItem }>("PATCH", `/api/trips/${id}/todos/${todoId}`, b).then((r) => r.todo),
+  deleteTodo: (id: number, todoId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/todos/${todoId}`),
 };
 
 // ---------- lieux ----------

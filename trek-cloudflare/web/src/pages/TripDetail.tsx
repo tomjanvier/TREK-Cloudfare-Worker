@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { places, photoUrl, trips, type Day, type MapPhotoFeature, type PhotoShare, type Place, type Share, type Trip } from "../api";
 import { navigate } from "../App";
 import { TripMap } from "../components/TripMap";
+import { DayPlan } from "../components/DayPlan";
+import { Budget, Packing, Reservations, Todos } from "../components/TripLists";
 import { useTripEvents } from "../useTripEvents";
 
 export function TripDetail({ id }: { id: number }) {
@@ -148,6 +150,15 @@ export function TripDetail({ id }: { id: number }) {
       </div>
 
       <DaysCard tripId={id} days={days} onChanged={load} onFlash={flash} />
+      <DayPlan tripId={id} onFlash={flash} />
+      <div className="grid two">
+        <Reservations tripId={id} days={days} onFlash={flash} />
+        <Budget tripId={id} onFlash={flash} />
+      </div>
+      <div className="grid two">
+        <Packing tripId={id} onFlash={flash} />
+        <Todos tripId={id} onFlash={flash} />
+      </div>
     </div>
   );
 }
