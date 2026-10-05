@@ -361,6 +361,83 @@ export const places = {
   remove: (placeId: number) => request<{ ok: true }>("DELETE", `/api/places/${placeId}`),
 };
 
+// ---------- journal ----------
+export interface Journey {
+  id: number;
+  title: string;
+  description: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  status: string;
+  is_public?: number;
+  public_token?: string | null;
+  photos_count?: number;
+  entries_count?: number;
+}
+
+export interface JourneyEntry {
+  id: number;
+  entry_date: string;
+  title: string | null;
+  body: string | null;
+  mood: string | null;
+  weather: string | null;
+}
+
+export interface JourneyPhoto {
+  id: number;
+  source: Source;
+  r2_key: string | null;
+  external_url: string | null;
+  thumbnail_url: string | null;
+  caption: string | null;
+  lat: number | null;
+  lng: number | null;
+  author: string | null;
+}
+
+export interface JourneyCheckin {
+  id: number;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  address: string | null;
+  checked_in_at: string;
+}
+
+export const journeys = {
+  list: () => request<{ journeys: Journey[] }>("GET", "/api/journeys").then((r) => r.journeys),
+  create: (b: Record<string, unknown>) =>
+    request<{ journey: Journey }>("POST", "/api/journeys", b).then((r) => r.journey),
+  detail: (id: number) =>
+    request<{
+      journey: Journey;
+      entries: JourneyEntry[];
+      checkins: JourneyCheckin[];
+      photos: JourneyPhoto[];
+      trip_ids: number[];
+    }>("GET", `/api/journeys/${id}`),
+  remove: (id: number) => request<{ ok: true }>("DELETE", `/api/journeys/${id}`),
+  map: (id: number) => request<{ type: string; features: MapPhotoFeature[] }>("GET", `/api/journeys/${id}/map`),
+  addEntry: (id: number, b: Record<string, unknown>) =>
+    request<{ entry: JourneyEntry }>("POST", `/api/journeys/${id}/entries`, b).then((r) => r.entry),
+  updateEntry: (id: number, entryId: number, b: Record<string, unknown>) =>
+    request<{ entry: JourneyEntry }>("PATCH", `/api/journeys/${id}/entries/${entryId}`, b).then((r) => r.entry),
+  removeEntry: (id: number, entryId: number) => request<{ ok: true }>("DELETE", `/api/journeys/${id}/entries/${entryId}`),
+  addCheckin: (id: number, b: Record<string, unknown>) =>
+    request<{ checkin: JourneyCheckin }>("POST", `/api/journeys/${id}/checkins`, b).then((r) => r.checkin),
+  removeCheckin: (id: number, checkinId: number) => request<{ ok: true }>("DELETE", `/api/journeys/${id}/checkins/${checkinId}`),
+  uploadPhoto: (id: number, form: FormData) =>
+    request<{ photo: JourneyPhoto }>("POST", `/api/journeys/${id}/photos`, form).then((r) => r.photo),
+  addExternalPhoto: (id: number, b: Record<string, unknown>) =>
+    request<{ photo: JourneyPhoto }>("POST", `/api/journeys/${id}/photos/external`, b).then((r) => r.photo),
+  updatePhoto: (id: number, photoId: number, b: Record<string, unknown>) =>
+    request<{ photo: JourneyPhoto }>("PATCH", `/api/journeys/${id}/photos/${photoId}`, b).then((r) => r.photo),
+  removePhoto: (id: number, photoId: number) => request<{ ok: true }>("DELETE", `/api/journeys/${id}/photos/${photoId}`),
+  share: (id: number) => request<{ token: string; url: string }>("POST", `/api/journeys/${id}/share`),
+  revokeShare: (id: number) => request<{ ok: true }>("DELETE", `/api/journeys/${id}/share`),
+};
+
 // ---------- page publique ----------
 export const shared = {
   get: (token: string) =>

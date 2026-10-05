@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { auth, getToken, type User } from "./api";
 import { Login } from "./pages/Login";
+import { Journeys, JourneyDetail } from "./pages/Journey";
 import { Trips } from "./pages/Trips";
 import { TripDetail } from "./pages/TripDetail";
 import { SharedTrip } from "./pages/SharedTrip";
@@ -8,6 +9,8 @@ import { SharedTrip } from "./pages/SharedTrip";
 type Route =
   | { name: "trips" }
   | { name: "trip"; id: number }
+  | { name: "journeys" }
+  | { name: "journey"; id: number }
   | { name: "shared"; token: string };
 
 function parse(): Route {
@@ -16,6 +19,9 @@ function parse(): Route {
   if (shared?.[1]) return { name: "shared", token: shared[1] };
   const trip = path.match(/^\/trips\/(\d+)$/);
   if (trip?.[1]) return { name: "trip", id: Number(trip[1]) };
+  const journey = path.match(/^\/journey\/(\d+)$/);
+  if (journey?.[1]) return { name: "journey", id: Number(journey[1]) };
+  if (path.startsWith("/journeys")) return { name: "journeys" };
   return { name: "trips" };
 }
 
@@ -71,6 +77,12 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <h1>TREK</h1>
+        <button className="ghost" onClick={() => navigate(route.name === "journeys" || route.name === "journey" ? "/journeys" : "/")}>
+          {route.name === "journeys" || route.name === "journey" ? "Journaux" : "Voyages"}
+        </button>
+        <button className="ghost" onClick={() => navigate(route.name === "journeys" || route.name === "journey" ? "/" : "/journeys")}>
+          {route.name === "journeys" || route.name === "journey" ? "Voyages" : "Journaux"}
+        </button>
         <span className="spacer" />
         <span className="muted">{user.username}</span>
         <button
@@ -86,7 +98,15 @@ export function App() {
         </button>
       </header>
       <main>
-        {route.name === "trips" ? <Trips user={user} /> : <TripDetail id={route.id} />}
+        {route.name === "trips" ? (
+          <Trips user={user} />
+        ) : route.name === "trip" ? (
+          <TripDetail id={route.id} />
+        ) : route.name === "journeys" ? (
+          <Journeys />
+        ) : (
+          <JourneyDetail id={route.id} />
+        )}
       </main>
     </div>
   );
