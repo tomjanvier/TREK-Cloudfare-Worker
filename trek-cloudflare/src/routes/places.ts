@@ -20,7 +20,8 @@ placesNested.get("/:id/places", requireAuth, async (c) => {
   if (dayId !== undefined) {
     const n = Number(dayId);
     if (!Number.isFinite(n)) return err(c, "bad_day_id", 400);
-    conds.push("day_id = ?");
+    // Filtre par assignation (source unique du rattachement jour).
+    conds.push("id IN (SELECT place_id FROM day_assignments WHERE day_id = ?)");
     binds.push(n);
   }
   const category = c.req.query("category")?.trim();
@@ -82,12 +83,18 @@ placesNested.post("/:id/places", requireAuth, async (c) => {
     const day = await getDay(c.env.DB, b.day_id);
     if (!day || day.trip_id !== tripId) return err(c, "bad_day_id", 400);
   }
+  // Le jour n'est plus stocké sur le lieu : il passe par day_assignments
+  // (source unique, cf. migration 0004).
   const res = await c.env.DB.prepare(
-    "INSERT INTO places (trip_id, day_id, name, lat, lng, address, category, notes, image_url, website) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO places (trip_id, name, lat, lng, address, category, notes, image_url, website) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(tripId, b.day_id ?? null, b.name, b.lat ?? null, b.lng ?? null, b.address ?? null, b.category ?? null, b.notes ?? null, b.image_url ?? null, b.website ?? null)
+    .bind(tripId, b.name, b.lat ?? null, b.lng ?? null, b.address ?? null, b.category ?? null, b.notes ?? null, b.image_url ?? null, b.website ?? null)
     .run();
   const place = await getPlace(c.env.DB, Number(res.meta.last_row_id));
+  if (b.day_id) {
+    const next = ((await c.env.DB.prepare("SELECT COALESCE(MAX(order_index), -1) AS m FROM day_assignments WHERE day_id = ?").bind(b.day_id).first<{ m: number }>())?.m ?? -1) + 1;
+    await c.env.DB.prepare("INSERT INTO day_assignments (day_id, place_id, order_index) VALUES (?, ?, ?)").bind(b.day_id, place!.id, next).run();
+  }
   notifyTrip(c, tripId, { type: "place.created", tripId, place });
   return c.json({ place }, 200);
 });
@@ -122,7 +129,6 @@ placesApi.patch("/:placeId", requireAuth, async (c) => {
     }
   };
   push("name", b.name);
-  push("day_id", b.day_id);
   push("lat", b.lat);
   push("lng", b.lng);
   push("address", b.address);
@@ -130,6 +136,17 @@ placesApi.patch("/:placeId", requireAuth, async (c) => {
   push("notes", b.notes);
   push("image_url", b.image_url);
   push("website", b.website);
+  if (!sets.length) return err(c, "bad_request", 400);
+  sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+  await c.env.DB.prepare(`UPDATE places SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, placeId).run();
+  // Rattachement de jour : null = retirer le lieu de tous les jours.
+  if (b.day_id !== undefined) {
+    await c.env.DB.prepare("DELETE FROM day_assignments WHERE place_id = ?").bind(placeId).run();
+    if (b.day_id !== null) {
+      const next = ((await c.env.DB.prepare("SELECT COALESCE(MAX(order_index), -1) AS m FROM day_assignments WHERE day_id = ?").bind(b.day_id).first<{ m: number }>())?.m ?? -1) + 1;
+      await c.env.DB.prepare("INSERT INTO day_assignments (day_id, place_id, order_index) VALUES (?, ?, ?)").bind(b.day_id, placeId, next).run();
+    }
+  }
   if (!sets.length) return err(c, "bad_request", 400);
   sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
   await c.env.DB.prepare(`UPDATE places SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, placeId).run();
