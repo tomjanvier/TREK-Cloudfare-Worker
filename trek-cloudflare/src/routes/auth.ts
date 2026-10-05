@@ -11,7 +11,7 @@ async function hashPassword(password: string, saltHex: string): Promise<string> 
   const salt = Uint8Array.from(saltHex.match(/../g)!.map((h) => parseInt(h, 16)));
   const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations: 120_000 },
+    { name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations: 100_000 }, // max supporté par WebCrypto Workers
     key,
     256,
   );

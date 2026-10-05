@@ -150,7 +150,7 @@ mutation queue offline-first du client d'origine.
 ## Limites assumées (Workers)
 
 - Pas de `better-sqlite3` / `fs` / `child_process` / `ws` stateful : D1 / R2 / DO.
-- Auth simplifiée (pas d'OIDC, passkeys, TOTP — JWT + PBKDF2 120k).
+- Auth simplifiée (pas d'OIDC, passkeys, TOTP — JWT + PBKDF2 100k, max du WebCrypto Workers, login rate-limité).
 - Temps réel = broadcast DO sans historique (le client garde sa file Dexie).
 - Fichiers ≤ 50 Mo, oEmbed IG best-effort (rate-limit Meta possible).
 
