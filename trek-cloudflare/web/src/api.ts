@@ -361,6 +361,47 @@ export const places = {
   remove: (placeId: number) => request<{ ok: true }>("DELETE", `/api/places/${placeId}`),
 };
 
+// ---------- carte : recherche, routes, POI ----------
+export interface SearchResult {
+  osm_id: string;
+  osm_type: string;
+  name: string;
+  lat: number;
+  lng: number;
+  category?: string;
+  type?: string;
+  address?: string | null;
+}
+
+export interface Poi {
+  osm_id: string;
+  name: string | null;
+  lat: number;
+  lng: number;
+  category: string;
+  tags: Record<string, string>;
+}
+
+export interface RouteResult {
+  profile: string;
+  distanceM: number;
+  durationS: number;
+  geometry: [number, number][];
+  stops: number;
+}
+
+export const maps = {
+  search: (q: string) => request<{ results: SearchResult[] }>("GET", `/api/maps/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
+  reverse: (lat: number, lng: number) =>
+    request<{ place: { name: string; address: string | null } }>("GET", `/api/maps/reverse?lat=${lat}&lng=${lng}`).then((r) => r.place),
+  route: (id: number, profile: "driving" | "walking" | "cycling") =>
+    request<RouteResult>("GET", `/api/maps/trips/${id}/route?profile=${profile}`),
+  pois: (id: number, category: string) =>
+    request<{ category: string; pois: Poi[] }>("GET", `/api/maps/trips/${id}/pois?category=${category}`).then((r) => r.pois),
+  addFromSearch: (id: number, b: { name: string; lat: number; lng: number; address?: string | null; day_id?: number }) =>
+    request<{ place: Place }>("POST", `/api/maps/trips/${id}/places/from-search`, b).then((r) => r.place),
+};
+
 // ---------- journal ----------
 export interface Journey {
   id: number;

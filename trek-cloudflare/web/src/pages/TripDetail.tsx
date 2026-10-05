@@ -3,6 +3,7 @@ import { places, photoUrl, trips, type Day, type MapPhotoFeature, type PhotoShar
 import { navigate } from "../App";
 import { TripMap } from "../components/TripMap";
 import { DayPlan } from "../components/DayPlan";
+import { PlaceSearch, RouteAndPois } from "../components/MapsTools";
 import { Budget, Packing, Reservations, Todos } from "../components/TripLists";
 import { useTripEvents } from "../useTripEvents";
 
@@ -151,6 +152,8 @@ export function TripDetail({ id }: { id: number }) {
 
       <DaysCard tripId={id} days={days} onChanged={load} onFlash={flash} />
       <DayPlan tripId={id} onFlash={flash} />
+      <PlaceSearch tripId={id} days={days} onAdded={load} />
+      <RouteAndPois tripId={id} onAddPoi={load} />
       <div className="grid two">
         <Reservations tripId={id} days={days} onFlash={flash} />
         <Budget tripId={id} onFlash={flash} />

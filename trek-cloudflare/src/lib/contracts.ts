@@ -132,3 +132,9 @@ export const categoryCreateSchema = z.object({
 });
 
 export const placeTagsSchema = z.object({ tag_ids: z.array(id).max(50) });
+
+// ---------- recherche & routes ----------
+export const searchSchema = z.object({
+  q: z.string().trim().min(2).max(200),
+  limit: z.coerce.number().int().min(1).max(25).optional().default(8),
+});
