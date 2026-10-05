@@ -47,10 +47,22 @@ describe("foldIcsLine", () => {
 });
 
 describe("openMeteoUrl", () => {
-  it("clamp la fenêtre à 16 jours", () => {
-    const u = new URL(openMeteoUrl(64.1, -21.9, "2026-07-01", "2026-08-15"));
-    expect(u.searchParams.get("start_date")).toBe("2026-07-01");
-    expect(u.searchParams.get("end_date")).toBe("2026-07-16");
+  it("clamp la fenêtre future à 16 jours et vise le forecast", () => {
+    // Fenêtre ancrée sur « demain » : elle reste dans la plage forecast quelle que soit la date du test.
+    const s = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+    const u = new URL(openMeteoUrl(64.1, -21.9, s, "2099-01-01"));
+    expect(u.host).toBe("api.open-meteo.com");
+    expect(u.searchParams.get("start_date")).toBe(s);
+    expect(u.searchParams.get("end_date")).toBe(new Date(new Date(s + "T00:00:00Z").getTime() + 15 * 86400_000).toISOString().slice(0, 10));
     expect(u.searchParams.get("daily")).toContain("weathercode");
+  });
+
+  it("bascule sur l'archive pour une fenêtre passée", () => {
+    const past = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    const end = new Date(Date.now() - 25 * 86400_000).toISOString().slice(0, 10);
+    const u = new URL(openMeteoUrl(64.1, -21.9, past, end));
+    expect(u.host).toBe("archive-api.open-meteo.com");
+    expect(u.searchParams.get("start_date")).toBe(past);
+    expect(u.searchParams.get("end_date")).toBe(end);
   });
 });

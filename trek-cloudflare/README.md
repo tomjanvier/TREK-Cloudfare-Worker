@@ -10,6 +10,12 @@ connecteurs **Instagram (embed public)** et **WordPress (REST API)**.
 Hors périmètre : plugins (`child_process` interdit en Workers), MCP, parsing IA,
 vacay/collections/budget avancés (ajoutables par migrations D1 suivantes).
 
+> **Le client React est `web/`** (léger, écrit contre cette API), **pas** le client
+> d'origine `../TREK/client` : celui-ci appelle ~338 routes (admin, atlas, budget,
+> plugins…) alors que l'API Workers en expose ~25. La brancher ici faisait planter
+> l'app au chargement. Le code d'origine reste dans le dépôt comme référence ; son
+> build n'est plus utilisé (voir `frontend/README.md`).
+
 Cloné depuis : https://github.com/liketrek/TREK — voir `../TREK/`.
 
 ## Architecture

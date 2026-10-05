@@ -14,7 +14,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply trek-db --remote",
     "db:seed:local": "node scripts/seed.mjs",
     "db:seed:remote": "node scripts/seed.mjs --remote",
-    "frontend:sync": "rsync -a --delete ../TREK/client/dist/ ./public/",
+    "frontend:build": "npm --prefix web run build",
+    "frontend:dev": "npm --prefix web run dev",
     "cf:tail": "wrangler tail",
     "typecheck": "tsc --noEmit"
   },

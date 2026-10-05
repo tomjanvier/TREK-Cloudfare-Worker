@@ -81,16 +81,30 @@ export function buildIcs(tripTitle: string, tripId: number, days: IcsDay[]): { i
   return { ics, count: events.length };
 }
 
-/** URL Open-Meteo journalière, fenêtre clampée à 16 jours (limite API). */
+const FORECAST_BASE = "https://api.open-meteo.com/v1/forecast";
+const ARCHIVE_BASE = "https://archive-api.open-meteo.com/v1/archive";
+const DAILY = "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode";
+/** Open-Meteo ne sert le forecast que de ~3 jours dans le passé à ~16 jours dans le futur. */
+const ARCHIVE_BEFORE_DAYS = 5;
+
+/**
+ * URL Open-Meteo journalière. Bascule sur l'archive API quand la fenêtre est
+ * entièrement dans le passé (comportement repris du TREK d'origine) ; sinon
+ * fenêtre clampée à 16 jours.
+ */
 export function openMeteoUrl(lat: number, lng: number, startDate: string, endDate: string): string {
   const s = startDate.slice(0, 10);
   let e = endDate.slice(0, 10);
-  const maxEnd = new Date(new Date(s + "T00:00:00Z").getTime() + 15 * 86400_000).toISOString().slice(0, 10);
-  if (e > maxEnd) e = maxEnd;
-  const u = new URL("https://api.open-meteo.com/v1/forecast");
+  const archiveCutoff = new Date(Date.now() - ARCHIVE_BEFORE_DAYS * 86400_000).toISOString().slice(0, 10);
+  const isPast = e < archiveCutoff;
+  if (!isPast) {
+    const maxEnd = new Date(new Date(s + "T00:00:00Z").getTime() + 15 * 86400_000).toISOString().slice(0, 10);
+    if (e > maxEnd) e = maxEnd;
+  }
+  const u = new URL(isPast ? ARCHIVE_BASE : FORECAST_BASE);
   u.searchParams.set("latitude", String(lat));
   u.searchParams.set("longitude", String(lng));
-  u.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode");
+  u.searchParams.set("daily", DAILY);
   u.searchParams.set("timezone", "auto");
   u.searchParams.set("start_date", s);
   u.searchParams.set("end_date", e);

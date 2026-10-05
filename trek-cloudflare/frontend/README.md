@@ -1,49 +1,38 @@
-# Frontend — réutiliser le client TREK d'origine sur Cloudflare
+# Frontend
 
-Le client (`../TREK/client` : React 19 + Vite + PWA) est **100 % statique en sortie** (`dist/`).
-La version Cloudflare le sert via **Workers Static Assets** (`assets.directory = ./public`).
+## Client web dédié (`web/`) — celui qui est déployé
 
-## Option A — build local (simple)
+React 19 + Vite + Leaflet, écrit **contre l'API du Worker** (`src/routes/*`), sans
+dépendance au client d'origine. Sortie statique dans `../public/` (servi par
+Workers Static Assets, fallback SPA).
 
 ```bash
-# 1. Builder le client d'origine
-cd ../TREK
-npm install
-npm run build --workspace=shared
-npm run build --workspace=client   # -> TREK/client/dist/
-
-# 2. Copier vers le Worker
-rm -rf ../trek-cloudflare/public
-cp -r client/dist ../trek-cloudflare/public
-
-# 3. Pointer le client vers l'API Worker
-#    client/.env.production :
-#    VITE_API_URL=https://trek-cloudflare.<ton-compte>.workers.dev
+npm --prefix web install
+npm run frontend:build      # -> ../public (wipe + rebuild)
+npm run frontend:dev        # dev :5173, proxy /api -> :8787 (wrangler dev)
 ```
 
-Les routes `/api/*`, `/uploads/*`, `/ws/*` sont proxifiées en dev via `client/vite.config.js`
-vers `:3001`. En prod Cloudflare, le même Worker sert l'API **et** le `dist/` (fallback SPA
-`not_found_handling: single-page-application`), donc aucun proxy à configurer.
+Écrans : connexion/inscription, liste des voyages (création + pagination),
+détail d'un voyage (carte, lieux, jours, météo, export GPX/ICS, photos, partage),
+page publique `/shared/:token` en lecture seule.
 
-## Option B — Workers Builds (recommandé ensuite)
+## Pourquoi pas le client d'origine (`../TREK/client`) ?
 
-Connecter le repo GitHub sur dash.cloudflare.com → Workers → trek-cloudflare :
-- Build command : `npm run build:client` (à ajouter : build shared+client puis copie dist→public)
-- Output : `./public`
+Il parle **~338 routes** d'API (`admin` ×56, `auth` ×46, `trips` ×45, `addons` ×20,
+`journeys`, `notifications`, `settings`, `atlas`…). L'API Workers en expose ~25 :
+le faire pointer vers ce Worker donnait des 404 dès le chargement et toute l'app
+(paramètres, atlas, voyages) était inutilisable. Le code est conservé comme
+référence ; `npm run frontend:build` ne construit plus `client/`.
 
-## Carte & photos partagées
+Deux options si tu veux retrouver l'UI complète plus tard :
+1. implémenter les routes manquantes côté Worker (les écrans non couverts restent
+   cassés) ;
+2. écrire un adaptateur qui répond aux 404 avec des valeurs par défaut — fragile,
+   déconseillé.
 
-- La carte d'origine (`MapViewAuto` Leaflet/MapLibre, `JourneyMap`, `CollectionMap`) fonctionne telle quelle :
-  tuiles OpenFreeMap sans token, Mapbox en option via `settings.map_provider`.
-- Nouveau : `GET /api/trips/:id/map-photos?sources=trip,instagram,wordpress` renvoie un
-  **GeoJSON** unifié pour overlay photo sur la carte :
-  ```json
-  { "type": "FeatureCollection", "features": [
-    { "type": "Feature",
-      "geometry": { "type": "Point", "coordinates": [2.35, 48.85] },
-      "properties": { "source": "instagram", "url": "https://www.instagram.com/p/...", "thumbnail": "...", "caption": "..." } }
-  ]}
-  ```
-  Le front peut l'afficher avec `L.geoJSON` (Leaflet) ou une source `geojson` clusterisée (MapLibre/GL).
-- Page publique existante `/shared/:token` : brancher `shareApi.getSharedTrip` sur
-  `GET /api/shared/:token` du Worker (même contrat : `{ trip, places, photo_shares }`).
+## Contrat API
+
+Tout est dans `web/src/api.ts` (types + fonctions) : `/api/auth/*`, `/api/trips/*`
+(y compris `days`, `places`, `photos`, `photo-shares`, `map-photos`, `share`,
+`weather`, `export.gpx`, `calendar.ics`), `/api/places/:id`, `/api/shared/:token`,
+`/api/photos/instagram/*`, `/api/photos/wordpress/*`.
