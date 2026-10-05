@@ -3,6 +3,6 @@ dist/
 .dev.vars
 .wrangler/
 worker-configuration.d.ts
-# Build du client (npm run frontend:sync) : artefact local de déploiement,
-# reconstruit via ../TREK/client — jamais commité.
+# Build du front (npm run frontend:build -> web/ vers ./public) : artefact de
+# déploiement local, jamais commité.
 public/

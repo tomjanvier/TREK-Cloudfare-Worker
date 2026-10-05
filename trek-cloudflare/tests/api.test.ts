@@ -3,7 +3,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { newShareToken } from "../src/db/client";
 import { clampLatLng, decodeCursor, encodeCursor } from "../src/lib/http";
 import { parseInstagramUrl } from "../src/photos/instagram";
-import { instaPinSchema, loginSchema, placeCreateSchema, registerSchema, sharePatchSchema, tripCreateSchema } from "../src/lib/validate";
+import { instaPinSchema, loginSchema, photoSharePatchSchema, placeCreateSchema, placesBulkSchema, registerSchema, sharePatchSchema, tripCreateSchema } from "../src/lib/validate";
 import { uniqueUsernameFromEmail } from "../src/routes/auth";
 
 describe("parseInstagramUrl", () => {
@@ -100,5 +100,18 @@ describe("schemas zod", () => {
   it("sharePatch borne les flags", () => {
     expect(sharePatchSchema.safeParse({ share_map: 0 }).success).toBe(true);
     expect(sharePatchSchema.safeParse({ share_map: 2 }).success).toBe(false);
+  });
+  it("photoSharePatch accepte un déplacement (lat/lng) ou une légende", () => {
+    expect(photoSharePatchSchema.safeParse({ lat: 64.1, lng: -21.9 }).success).toBe(true);
+    expect(photoSharePatchSchema.safeParse({ caption: "couchant" }).success).toBe(true);
+    expect(photoSharePatchSchema.safeParse({ caption: null }).success).toBe(true);
+    expect(photoSharePatchSchema.safeParse({ lat: 200 }).success).toBe(false);
+    expect(photoSharePatchSchema.safeParse({ place_id: 0 }).success).toBe(false);
+  });
+  it("placesBulk exige 1..500 lignes valides", () => {
+    expect(placesBulkSchema.safeParse({ places: [{ name: "Geysir", lat: 64.3, lng: -20.3 }] }).success).toBe(true);
+    expect(placesBulkSchema.safeParse({ places: [] }).success).toBe(false);
+    expect(placesBulkSchema.safeParse({ places: [{ name: "" }] }).success).toBe(false);
+    expect(placesBulkSchema.safeParse({ places: Array.from({ length: 501 }, () => ({ name: "x" })) }).success).toBe(false);
   });
 });

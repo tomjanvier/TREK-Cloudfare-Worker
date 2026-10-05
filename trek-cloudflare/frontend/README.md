@@ -16,6 +16,11 @@ npm run frontend:dev        # dev :5173, proxy /api -> :8787 (wrangler dev)
 détail d'un voyage (carte, lieux, jours, météo, export GPX/ICS, photos, partage),
 page publique `/shared/:token` en lecture seule.
 
+Interactions carte : **clic = créer un lieu** à ce point, **drag d'un pin photo =
+persist sa nouvelle position** (`PATCH /photo-shares/:id`), import en lot de lieux
+(`nom | lat | lng | n° de jour`), édition inline des lieux et des jours, et
+synchronisation temps réel via `useTripEvents` (WebSocket → rechargement).
+
 ## Pourquoi pas le client d'origine (`../TREK/client`) ?
 
 Il parle **~338 routes** d'API (`admin` ×56, `auth` ×46, `trips` ×45, `addons` ×20,

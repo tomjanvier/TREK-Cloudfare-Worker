@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { places, photoUrl, trips, type Day, type MapPhotoFeature, type PhotoShare, type Place, type Share, type Trip } from "../api";
 import { navigate } from "../App";
 import { TripMap } from "../components/TripMap";
+import { useTripEvents } from "../useTripEvents";
 
 export function TripDetail({ id }: { id: number }) {
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -13,6 +14,8 @@ export function TripDetail({ id }: { id: number }) {
   const [weather, setWeather] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ lat: number; lng: number } | null>(null);
+  const [draftName, setDraftName] = useState("");
 
   const load = useCallback(async () => {
     setErr(null);
@@ -46,6 +49,9 @@ export function TripDetail({ id }: { id: number }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Temps réel : recharge si un autre client modifie le voyage.
+  useTripEvents(id, () => void load());
 
   const flash = (m: string) => {
     setInfo(m);
@@ -81,17 +87,67 @@ export function TripDetail({ id }: { id: number }) {
       {info && <div className="muted">{info}</div>}
       {weather && <div className="muted">Météo : {weather}</div>}
 
-      <TripMap places={list} features={features} photoHref={(f) => photoUrl(f.properties.url)} />
+      <div className="muted">Clic sur la carte pour ajouter un lieu · glisse un pin photo pour le déplacer.</div>
+      <TripMap
+        places={list}
+        features={features}
+        photoHref={(f) => photoUrl(f.properties.url)}
+        onMapClick={(lat, lng) => setDraft({ lat, lng })}
+        onPhotoMoved={(f, lat, lng) => {
+          void trips
+            .updatePhotoShare(id, f.properties.id, { lat, lng })
+            .then(() => {
+              flash("Position de la photo mise à jour.");
+              void load();
+            })
+            .catch((e: Error) => flash(`Erreur : ${e.message}`));
+        }}
+      />
+
+      {draft && (
+        <div className="card stack">
+          <h3>Nouveau lieu à {draft.lat.toFixed(4)}, {draft.lng.toFixed(4)}</h3>
+          <form
+            className="row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = draftName.trim();
+              if (!name) return;
+              void places
+                .create(id, { name, lat: draft.lat, lng: draft.lng })
+                .then(() => {
+                  setDraft(null);
+                  setDraftName("");
+                  flash("Lieu ajouté.");
+                  void load();
+                })
+                .catch((e2: Error) => flash(`Erreur : ${e2.message}`));
+            }}
+          >
+            <input
+              style={{ flex: 1 }}
+              autoFocus
+              placeholder="Nom du lieu"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+            />
+            <button type="submit">Ajouter</button>
+            <button type="button" className="ghost" onClick={() => setDraft(null)}>
+              Annuler
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="grid two">
-        <PlacesCard tripId={id} places={list} days={days} onChanged={load} />
+        <PlacesCard tripId={id} places={list} days={days} onChanged={load} onFlash={flash} />
         <div className="stack">
           <ShareCard tripId={id} share={share} onChanged={load} onFlash={flash} />
           <PhotosCard tripId={id} shares={shares} places={list} onChanged={load} onFlash={flash} />
         </div>
       </div>
 
-      <DaysCard tripId={id} days={days} onChanged={load} />
+      <DaysCard tripId={id} days={days} onChanged={load} onFlash={flash} />
     </div>
   );
 }
@@ -102,11 +158,13 @@ function PlacesCard({
   places: list,
   days,
   onChanged,
+  onFlash,
 }: {
   tripId: number;
   places: Place[];
   days: Day[];
   onChanged: () => void;
+  onFlash: (m: string) => void;
 }) {
   const [name, setName] = useState("");
   const [lat, setLat] = useState("");
@@ -167,17 +225,101 @@ function PlacesCard({
         {err && <div className="error">{err}</div>}
       </form>
       <div className="divider" />
+      <BulkImport tripId={tripId} days={days} onDone={onChanged} onFlash={onFlash} />
+      <div className="divider" />
       <div className="list">
         {list.map((p) => (
-          <div className="list-item" key={p.id}>
-            <div>
-              <strong>{p.name}</strong>
-              <div className="muted">
-                {p.lat !== null && p.lng !== null ? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}` : "pas de coordonnées"}
-              </div>
-            </div>
+          <PlaceRow key={p.id} place={p} days={days} onChanged={onChanged} onFlash={onFlash} />
+        ))}
+        {list.length === 0 && <div className="muted">Aucun lieu.</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Ligne de lieu éditable (nom, coords, jour) sans quitter la page. */
+function PlaceRow({
+  place: p,
+  days,
+  onChanged,
+  onFlash,
+}: {
+  place: Place;
+  days: Day[];
+  onChanged: () => void;
+  onFlash: (m: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(p.name);
+  const [lat, setLat] = useState(p.lat?.toString() ?? "");
+  const [lng, setLng] = useState(p.lng?.toString() ?? "");
+  const [dayId, setDayId] = useState(p.day_id?.toString() ?? "");
+
+  return (
+    <div className="list-item" style={{ flexDirection: open ? "column" : "row", alignItems: open ? "stretch" : "center" }}>
+      {open ? (
+        <div className="stack">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom" />
+          <div className="row">
+            <input style={{ flex: 1 }} placeholder="lat" value={lat} onChange={(e) => setLat(e.target.value)} />
+            <input style={{ flex: 1 }} placeholder="lng" value={lng} onChange={(e) => setLng(e.target.value)} />
+            <select style={{ width: 130 }} value={dayId} onChange={(e) => setDayId(e.target.value)}>
+              <option value="">— jour —</option>
+              {days.map((d) => (
+                <option key={d.id} value={d.id}>
+                  J{d.day_number}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="row end">
             <button
-              className="ghost"
+              onClick={() => {
+                void places
+                  .update(p.id, {
+                    name: name.trim() || p.name,
+                    lat: lat ? Number(lat) : null,
+                    lng: lng ? Number(lng) : null,
+                    day_id: dayId ? Number(dayId) : null,
+                  })
+                  .then(() => {
+                    onFlash("Lieu mis à jour.");
+                    setOpen(false);
+                    onChanged();
+                  })
+                  .catch((e: Error) => onFlash(`Erreur : ${e.message}`));
+              }}
+            >
+              Enregistrer
+            </button>
+            <button className="ghost" onClick={() => setOpen(false)}>
+              Annuler
+            </button>
+            <button
+              className="danger"
+              onClick={() => {
+                if (confirm(`Supprimer « ${p.name} » ?`)) void places.remove(p.id).then(onChanged);
+              }}
+            >
+              Supprimer
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div>
+            <strong>{p.name}</strong>
+            <div className="muted">
+              {p.lat !== null && p.lng !== null ? `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}` : "pas de coordonnées"}
+              {days.find((d) => d.id === p.day_id) ? ` · J${days.find((d) => d.id === p.day_id)!.day_number}` : ""}
+            </div>
+          </div>
+          <div className="row">
+            <button className="ghost" onClick={() => setOpen(true)}>
+              Modifier
+            </button>
+            <button
+              className="danger"
               onClick={() => {
                 if (confirm(`Supprimer « ${p.name} » ?`)) void places.remove(p.id).then(onChanged);
               }}
@@ -185,8 +327,86 @@ function PlacesCard({
               ✕
             </button>
           </div>
-        ))}
-        {list.length === 0 && <div className="muted">Aucun lieu.</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Import rapide : une ligne = "nom | lat | lng | n° de jour". */
+function BulkImport({
+  tripId,
+  days,
+  onDone,
+  onFlash,
+}: {
+  tripId: number;
+  days: Day[];
+  onDone: () => void;
+  onFlash: (m: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const maxDay = Math.max(0, ...days.map((d) => d.day_number));
+
+  const parse = () =>
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [rawName = "", la = "", ln = "", day = ""] = line.split("|").map((s) => s.trim());
+        const latN = la ? Number(la) : null;
+        const lngN = ln ? Number(ln) : null;
+        return {
+          name: rawName,
+          lat: latN !== null && Number.isFinite(latN) ? latN : null,
+          lng: lngN !== null && Number.isFinite(lngN) ? lngN : null,
+          day_id: day && maxDay > 0 && Number(day) >= 1 && Number(day) <= maxDay ? Number(day) : null,
+        };
+      })
+      .filter((p) => p.name.length > 0);
+
+  if (!open) {
+    return (
+      <div className="row end">
+        <button className="ghost" onClick={() => setOpen(true)}>
+          Import en lot
+        </button>
+      </div>
+    );
+  }
+  const parsed = parse();
+  return (
+    <div className="stack">
+      <div className="muted">Une ligne par lieu : <code>nom | lat | lng | n° de jour</code> (coordonnées et jour optionnels).</div>
+      <textarea
+        rows={6}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={"Geysir | 64.3105 | -20.3029 | 2\nGullfoss | 64.3271 | -20.1199 | 2"}
+      />
+      <div className="row end">
+        <span className="muted">{parsed.length} ligne(s) détectée(s)</span>
+        <button
+          disabled={parsed.length === 0}
+          onClick={() => {
+            void places
+              .bulk(tripId, parsed)
+              .then((n) => {
+                onFlash(`${n} lieu(x) importé(s).`);
+                setText("");
+                setOpen(false);
+                onDone();
+              })
+              .catch((e: Error) => onFlash(`Erreur : ${e.message}`));
+          }}
+        >
+          Importer
+        </button>
+        <button className="ghost" onClick={() => setOpen(false)}>
+          Annuler
+        </button>
       </div>
     </div>
   );
@@ -433,7 +653,17 @@ function PhotosCard({
 }
 
 // ---------------------------------------------------------------- jours
-function DaysCard({ tripId, days, onChanged }: { tripId: number; days: Day[]; onChanged: () => void }) {
+function DaysCard({
+  tripId,
+  days,
+  onChanged,
+  onFlash,
+}: {
+  tripId: number;
+  days: Day[];
+  onChanged: () => void;
+  onFlash: (m: string) => void;
+}) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -463,15 +693,88 @@ function DaysCard({ tripId, days, onChanged }: { tripId: number; days: Day[]; on
       {err && <div className="error">{err}</div>}
       <div className="list">
         {days.map((d) => (
-          <div className="list-item" key={d.id}>
-            <div>
-              <strong>J{d.day_number}</strong> {d.title ? `· ${d.title}` : ""}
-              <div className="muted">{d.date ?? "sans date"}</div>
-            </div>
-          </div>
+          <DayRow key={d.id} day={d} onChanged={onChanged} onFlash={onFlash} />
         ))}
         {days.length === 0 && <div className="muted">Aucun jour.</div>}
       </div>
+    </div>
+  );
+}
+/** Ligne de jour éditable : numéro, titre, date, suppression. */
+function DayRow({ day: d, onChanged, onFlash }: { day: Day; onChanged: () => void; onFlash: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [num, setNum] = useState(String(d.day_number));
+  const [title, setTitle] = useState(d.title ?? "");
+  const [date, setDate] = useState(d.date ?? "");
+
+  return (
+    <div className="list-item" style={{ flexDirection: open ? "column" : "row", alignItems: open ? "stretch" : "center" }}>
+      {open ? (
+        <div className="stack">
+          <div className="row">
+            <div style={{ width: 90 }}>
+              <label>N°</label>
+              <input type="number" min={1} max={1000} value={num} onChange={(e) => setNum(e.target.value)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Titre</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div style={{ width: 180 }}>
+              <label>Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+          </div>
+          <div className="row end">
+            <button
+              onClick={() => {
+                void trips
+                  .updateDay(d.id, {
+                    day_number: Number(num) || d.day_number,
+                    title: title.trim() || null,
+                    date: date || null,
+                  })
+                  .then(() => {
+                    onFlash("Jour mis à jour.");
+                    setOpen(false);
+                    onChanged();
+                  })
+                  .catch((e: Error) => onFlash(`Erreur : ${e.message}`));
+              }}
+            >
+              Enregistrer
+            </button>
+            <button className="ghost" onClick={() => setOpen(false)}>
+              Annuler
+            </button>
+            <button
+              className="danger"
+              onClick={() => {
+                if (confirm(`Supprimer le jour ${d.day_number} ?`))
+                  void trips
+                    .deleteDay(d.id)
+                    .then(() => {
+                      onFlash("Jour supprimé.");
+                      onChanged();
+                    })
+                    .catch((e: Error) => onFlash(`Erreur : ${e.message}`));
+              }}
+            >
+              Supprimer
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div>
+            <strong>J{d.day_number}</strong> {d.title ? `· ${d.title}` : ""}
+            <div className="muted">{d.date ?? "sans date"}</div>
+          </div>
+          <button className="ghost" onClick={() => setOpen(true)}>
+            Modifier
+          </button>
+        </>
+      )}
     </div>
   );
 }

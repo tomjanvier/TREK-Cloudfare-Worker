@@ -47,12 +47,16 @@ function photoIcon(f: MapPhotoFeature, thumb: string | null): L.DivIcon {
 interface Props {
   places?: Place[];
   features?: MapPhotoFeature[];
-  /** Rend chaque photo cliquable avec son URL résolue ( lien public inclus). */
+  /** Rend chaque photo cliquable avec son URL résolue (lien public inclus). */
   photoHref?: (f: MapPhotoFeature) => string;
   small?: boolean;
+  /** Clic sur la carte = créer un lieu à cet endroit. */
+  onMapClick?: (lat: number, lng: number) => void;
+  /** Fin de drag d'une photo = persist sa nouvelle position. */
+  onPhotoMoved?: (feature: MapPhotoFeature, lat: number, lng: number) => void;
 }
 
-export function TripMap({ places = [], features = [], photoHref, small }: Props) {
+export function TripMap({ places = [], features = [], photoHref, small, onMapClick, onPhotoMoved }: Props) {
   const pIcon = useMemo(placeIcon, []);
   const points = useMemo<[number, number][]>(() => {
     const out: [number, number][] = [];
@@ -62,13 +66,20 @@ export function TripMap({ places = [], features = [], photoHref, small }: Props)
   }, [places, features]);
 
   return (
-    <MapContainer center={[46.6, 2.4]} zoom={5} className={small ? "map small" : "map"} scrollWheelZoom>
+    <MapContainer
+      center={[46.6, 2.4]}
+      zoom={5}
+      className={small ? "map small" : "map"}
+      scrollWheelZoom
+      style={{ cursor: onMapClick ? "crosshair" : undefined }}
+    >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://openfreemap.org">OpenFreeMap</a>'
         url="https://tiles.openfreemap.org/planet/{z}/{x}/{y}.png"
         maxZoom={19}
       />
       <Fit points={points} />
+      <ClickHandler onClick={onMapClick} />
       {places
         .filter((p) => p.lat !== null && p.lng !== null)
         .map((p) => (
@@ -84,16 +95,49 @@ export function TripMap({ places = [], features = [], photoHref, small }: Props)
         const [lng, lat] = f.geometry.coordinates;
         if (lat === null || lng === null) return null;
         return (
-          <Marker key={`ph-${f.properties.id}`} position={[lat, lng]} icon={photoIcon(f, f.properties.thumbnail)}>
+          <Marker
+            key={`ph-${f.properties.id}`}
+            position={[lat, lng]}
+            icon={photoIcon(f, f.properties.thumbnail)}
+            draggable={!!onPhotoMoved}
+            eventHandlers={
+              onPhotoMoved
+                ? {
+                    dragend: (e) => {
+                      const ll = (e.target as L.Marker).getLatLng();
+                      onPhotoMoved(f, ll.lat, ll.lng);
+                    },
+                  }
+                : undefined
+            }
+          >
             <Popup>
               <strong>{f.properties.source}</strong>
               {f.properties.author ? ` · ${f.properties.author}` : ""}
               {f.properties.caption ? (<><br />{f.properties.caption.slice(0, 160)}</>) : null}
               {photoHref ? (<><br /><a href={photoHref(f)} target="_blank" rel="noreferrer">ouvrir</a></>) : null}
+              {onPhotoMoved ? (<><br /><span style={{ opacity: .7 }}>glisse le pin pour déplacer</span></>) : null}
             </Popup>
           </Marker>
         );
       })}
     </MapContainer>
   );
+}
+
+/** Traduit le clic carte en lat/lng (le clic sur un marqueur ne déclenche pas l'ajout). */
+function ClickHandler({ onClick }: { onClick?: (lat: number, lng: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!onClick) return;
+    const handler = (e: L.LeafletMouseEvent) => {
+      if ((e.originalEvent.target as HTMLElement)?.closest?.(".leaflet-marker-icon")) return;
+      onClick(e.latlng.lat, e.latlng.lng);
+    };
+    map.on("click", handler);
+    return () => {
+      map.off("click", handler);
+    };
+  }, [map, onClick]);
+  return null;
 }

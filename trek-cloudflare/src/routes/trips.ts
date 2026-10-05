@@ -128,11 +128,11 @@ trips.patch("/:id", requireAuth, async (c) => {
     }
   };
   push("title", b.title);
-  push("description", b.description ?? undefined);
-  push("start_date", b.start_date ?? undefined);
-  push("end_date", b.end_date ?? undefined);
-  push("currency", b.currency ?? undefined);
-  push("cover_image", b.cover_image ?? undefined);
+  push("description", b.description);
+  push("start_date", b.start_date);
+  push("end_date", b.end_date);
+  push("currency", b.currency);
+  push("cover_image", b.cover_image);
   if (b.is_archived !== undefined) {
     sets.push("is_archived = ?");
     binds.push(b.is_archived);

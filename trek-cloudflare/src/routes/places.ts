@@ -5,7 +5,7 @@ import { assertTripAccess, getDay, getPlace } from "../db/client";
 import { tripFromPlace, userIdOf } from "../lib/access";
 import { err, readJson } from "../lib/http";
 import { notifyTrip } from "../lib/notify";
-import { fmtIssues, placeCreateSchema, placePatchSchema } from "../lib/validate";
+import { fmtIssues, placeCreateSchema, placePatchSchema, placesBulkSchema } from "../lib/validate";
 
 /** Opérations collection imbriquées sous /api/trips/:id/places (compat client d'origine). */
 export const placesNested = new Hono<{ Bindings: Env }>();
@@ -35,6 +35,40 @@ placesNested.get("/:id/places", requireAuth, async (c) => {
   }
   const { results } = await c.env.DB.prepare(`SELECT * FROM places WHERE ${conds.join(" AND ")} ORDER BY id LIMIT 500`).bind(...binds).all();
   return c.json({ places: results });
+});
+
+placesNested.post("/:id/places/bulk", requireAuth, async (c) => {
+  const tripId = Number(c.req.param("id"));
+  const trip = await assertTripAccess(c.env.DB, tripId, userIdOf(c));
+  if (!trip) return err(c, "not_found", 404);
+  const parsed = placesBulkSchema.safeParse(await readJson(c));
+  if (!parsed.success) return err(c, "bad_request", 400, { issues: fmtIssues(parsed.error) });
+  const input = parsed.data.places;
+  // Résolution day_id -> day_number : le front envoie le numéro de jour lisible.
+  const dayRows = await c.env.DB.prepare("SELECT id, day_number FROM days WHERE trip_id = ?").bind(tripId).all<{
+    id: number;
+    day_number: number;
+  }>();
+  const idByNumber = new Map(dayRows.results.map((d) => [d.day_number, d.id]));
+  const validIds = new Set(dayRows.results.map((d) => d.id));
+  const stmts = [];
+  for (const p of input) {
+    let dayId: number | null = null;
+    if (typeof p.day_id === "number") {
+      // Interprète d'abord comme un numéro de jour, sinon comme un id (compat).
+      dayId = idByNumber.get(p.day_id) ?? (validIds.has(p.day_id) ? p.day_id : null);
+      if (dayId === null) return err(c, "bad_day_id", 400);
+    }
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO places (trip_id, day_id, name, lat, lng, address, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(tripId, dayId, p.name, p.lat ?? null, p.lng ?? null, p.address ?? null, p.category ?? null, p.notes ?? null),
+    );
+  }
+  await c.env.DB.batch(stmts); // atomique : tout ou rien
+  const { results } = await c.env.DB.prepare("SELECT * FROM places WHERE trip_id = ? ORDER BY id").bind(tripId).all();
+  notifyTrip(c, tripId, { type: "place.bulk", tripId, count: input.length });
+  return c.json({ inserted: input.length, places: results }, 200);
 });
 
 placesNested.post("/:id/places", requireAuth, async (c) => {
@@ -80,6 +114,7 @@ placesApi.patch("/:placeId", requireAuth, async (c) => {
   }
   const sets: string[] = [];
   const binds: (string | number | null)[] = [];
+  // `!== undefined` : null est une valeur explicite (« effacer le champ »), pas une absence.
   const push = (col: string, v: string | number | null | undefined) => {
     if (v !== undefined) {
       sets.push(`${col} = ?`);
@@ -90,11 +125,11 @@ placesApi.patch("/:placeId", requireAuth, async (c) => {
   push("day_id", b.day_id);
   push("lat", b.lat);
   push("lng", b.lng);
-  push("address", b.address ?? undefined);
-  push("category", b.category ?? undefined);
-  push("notes", b.notes ?? undefined);
-  push("image_url", b.image_url ?? undefined);
-  push("website", b.website ?? undefined);
+  push("address", b.address);
+  push("category", b.category);
+  push("notes", b.notes);
+  push("image_url", b.image_url);
+  push("website", b.website);
   if (!sets.length) return err(c, "bad_request", 400);
   sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
   await c.env.DB.prepare(`UPDATE places SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, placeId).run();

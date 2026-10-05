@@ -96,6 +96,31 @@ export const wpPinSchema = z.object({
   place_id: z.number().int().positive().nullable().optional(),
 });
 
+export const photoSharePatchSchema = z.object({
+  lat,
+  lng,
+  place_id: z.number().int().positive().nullable().optional(),
+  caption: z.string().trim().max(1000).nullable().optional(),
+});
+
+/** Import bulk : une ligne par lieu, `name` obligatoire (lat/lng optionnels). */
+export const placesBulkSchema = z.object({
+  places: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(240),
+        lat: lat,
+        lng: lng,
+        address: z.string().trim().max(500).nullable().optional(),
+        category: z.string().trim().max(80).nullable().optional(),
+        notes: z.string().trim().max(8000).nullable().optional(),
+        day_id: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
 export const sharePatchSchema = z.object({
   share_map: z.number().int().min(0).max(1).optional(),
   share_photos: z.number().int().min(0).max(1).optional(),

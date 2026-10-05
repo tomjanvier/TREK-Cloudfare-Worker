@@ -87,6 +87,7 @@ Secrets prod : `npx wrangler secret put JWT_SECRET` (jamais en clair ni dans `wr
 | GET/POST | `/api/trips/:id/members` (invite par id/email/username) | membre / owner |
 | DELETE | `/api/trips/:id/members/:userId` (retrait ou départ) | owner ou soi-même |
 | GET | `/api/trips/:id/places?search&day_id&category` | membre |
+| POST | `/api/trips/:id/places/bulk` (1..500 lignes, `day_number` accepté, atomique) | membre |
 | GET | `/api/trips/:id/export.gpx`, `/api/trips/:id/calendar.ics` | membre ou `?share=` (`share_map`) |
 | GET | `/api/trips/:id/weather` (Open-Meteo, edge-cache 1 h via share) | membre ou `?share=` |
 | GET/POST | `/api/trips/:id/days` | membre |
@@ -98,6 +99,7 @@ Secrets prod : `npx wrangler secret put JWT_SECRET` (jamais en clair ni dans `wr
 | GET | `/api/trips/:id/photos/:photoId/file` (Range/ETag) | membre ou `?share=` |
 | DELETE | `/api/trips/:id/photos/:photoId` (R2 nettoyé) | membre |
 | GET/DELETE | `/api/trips/:id/photo-shares[/:shareId]` | membre |
+| PATCH | `/api/trips/:id/photo-shares/:shareId` (déplacement pin, légende) | membre |
 | POST/GET/PATCH/DELETE | `/api/trips/:id/share` | owner |
 | GET | `/api/shared/:token` | public, edge-cache 60 s |
 | GET | `/api/trips/:id/map-photos?sources=upload,instagram,wordpress&share=` | membre ou `?share=`, GeoJSON |

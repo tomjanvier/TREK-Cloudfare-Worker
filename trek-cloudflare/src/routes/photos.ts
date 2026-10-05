@@ -3,9 +3,10 @@ import type { Env } from "../env";
 import { requireAuth } from "../auth";
 import { assertTripAccess, getPhoto, getShareByToken } from "../db/client";
 import { userIdOf } from "../lib/access";
-import { clientIp, err, getPagination } from "../lib/http";
+import { clientIp, err, getPagination, readJson } from "../lib/http";
 import { notifyTrip } from "../lib/notify";
 import { rateLimit } from "../lib/ratelimit";
+import { fmtIssues, photoSharePatchSchema } from "../lib/validate";
 import { assertUploadable, photoKey, putPhoto } from "../storage/r2";
 
 /** Toutes les routes imbriquées /api/trips/:id/... liées aux photos. */
@@ -176,4 +177,45 @@ photosNested.delete("/:id/photo-shares/:shareId", requireAuth, async (c) => {
   await c.env.DB.prepare("DELETE FROM photo_shares WHERE id = ?").bind(shareId).run();
   notifyTrip(c, tripId, { type: "photo.deleted", tripId, shareId });
   return c.json({ ok: true });
+});
+
+/** Déplacement / édition d'une photo épinglée (drag sur la carte, légende). */
+photosNested.patch("/:id/photo-shares/:shareId", requireAuth, async (c) => {
+  const tripId = Number(c.req.param("id"));
+  const shareId = Number(c.req.param("shareId"));
+  if (!(await assertTripAccess(c.env.DB, tripId, userIdOf(c)))) return err(c, "not_found", 404);
+  const existing = await c.env.DB.prepare("SELECT id, place_id FROM photo_shares WHERE id = ? AND trip_id = ?")
+    .bind(shareId, tripId)
+    .first<{ id: number; place_id: number | null }>();
+  if (!existing) return err(c, "not_found", 404);
+  const parsed = photoSharePatchSchema.safeParse(await readJson(c));
+  if (!parsed.success) return err(c, "bad_request", 400, { issues: fmtIssues(parsed.error) });
+  const b = parsed.data;
+  if (b.place_id !== undefined && b.place_id !== null) {
+    const place = await c.env.DB.prepare("SELECT id FROM places WHERE id = ? AND trip_id = ?").bind(b.place_id, tripId).first();
+    if (!place) return err(c, "bad_place_id", 400);
+  }
+  const sets: string[] = [];
+  const binds: (string | number | null)[] = [];
+  if (b.lat !== undefined) {
+    sets.push("lat = ?");
+    binds.push(b.lat);
+  }
+  if (b.lng !== undefined) {
+    sets.push("lng = ?");
+    binds.push(b.lng);
+  }
+  if (b.place_id !== undefined) {
+    sets.push("place_id = ?");
+    binds.push(b.place_id);
+  }
+  if (b.caption !== undefined) {
+    sets.push("caption = ?");
+    binds.push(b.caption);
+  }
+  if (!sets.length) return err(c, "bad_request", 400);
+  await c.env.DB.prepare(`UPDATE photo_shares SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, shareId).run();
+  const row = await c.env.DB.prepare("SELECT * FROM photo_shares WHERE id = ?").bind(shareId).first();
+  notifyTrip(c, tripId, { type: "photo.updated", tripId, shareId });
+  return c.json({ photo_share: row });
 });

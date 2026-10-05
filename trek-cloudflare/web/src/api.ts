@@ -177,6 +177,9 @@ export const trips = {
   remove: (id: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}`),
   days: (id: number) => request<{ days: Day[] }>("GET", `/api/trips/${id}/days`).then((r) => r.days),
   addDay: (id: number, b: { title?: string; date?: string }) => request<{ day: Day }>("POST", `/api/trips/${id}/days`, b).then((r) => r.day),
+  updateDay: (dayId: number, b: { title?: string | null; date?: string | null; day_number?: number }) =>
+    request<{ day: Day }>("PATCH", `/api/days/${dayId}`, b).then((r) => r.day),
+  deleteDay: (dayId: number) => request<{ ok: true }>("DELETE", `/api/days/${dayId}`),
   mapPhotos: (id: number, shareToken?: string, sources?: string[]) => {
     const p = new URLSearchParams();
     if (sources?.length) p.set("sources", sources.join(","));
@@ -201,6 +204,8 @@ export const trips = {
       (r) => r.photo_shares,
     ),
   deletePhotoShare: (id: number, shareId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/photo-shares/${shareId}`),
+  updatePhotoShare: (id: number, shareId: number, b: { lat?: number | null; lng?: number | null; caption?: string | null; place_id?: number | null }) =>
+    request<{ photo_share: PhotoShare }>("PATCH", `/api/trips/${id}/photo-shares/${shareId}`, b).then((r) => r.photo_share),
   uploadPhoto: (id: number, form: FormData) =>
     request<{ id: number; url: string }>("POST", `/api/trips/${id}/photos`, form).then((r) => r.id),
   deletePhoto: (id: number, photoId: number) => request<{ ok: true }>("DELETE", `/api/trips/${id}/photos/${photoId}`),
@@ -231,6 +236,8 @@ export const places = {
   },
   create: (tripId: number, b: { name: string; lat?: number | null; lng?: number | null; address?: string; day_id?: number | null; notes?: string }) =>
     request<{ place: Place }>("POST", `/api/trips/${tripId}/places`, b).then((r) => r.place),
+  bulk: (tripId: number, items: { name: string; lat?: number | null; lng?: number | null; day_id?: number | null; notes?: string }[]) =>
+    request<{ inserted: number; places: Place[] }>("POST", `/api/trips/${tripId}/places/bulk`, { places: items }).then((r) => r.inserted),
   update: (placeId: number, b: Partial<{ name: string; lat: number | null; lng: number | null; day_id: number | null; notes: string }>) =>
     request<{ place: Place }>("PATCH", `/api/places/${placeId}`, b).then((r) => r.place),
   remove: (placeId: number) => request<{ ok: true }>("DELETE", `/api/places/${placeId}`),
